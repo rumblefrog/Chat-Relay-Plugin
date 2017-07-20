@@ -16,13 +16,12 @@
 
 Handle Socket;
 
-Handle dJson;
-Handle mJson;
-
 bool Authenticated;
 bool Binded;
 
 int Bindings[] = {1, 2};
+
+char Hostname[64];
 
 public Plugin myinfo = 
 {
@@ -36,6 +35,8 @@ public Plugin myinfo =
 public void OnPluginStart()
 {
 	SocketSetOption(INVALID_HANDLE, DebugMode, 1);
+	
+	GetConVarString(FindConVar("hostname"), Hostname, sizeof Hostname);
 	
 	Socket = SocketCreate(SOCKET_TCP, OnSocketError);
 	
@@ -65,7 +66,7 @@ public int OnSocketReceive(Handle socket, const char[] receiveData, int dataSize
 {
 	PrintToServer("%s", receiveData);
 	
-	dJson = json_load(receiveData);
+	Handle dJson = json_load(receiveData);
 	
 	if (dJson == INVALID_HANDLE)
 	{
@@ -148,7 +149,28 @@ public int OnSocketDisconnected(Handle socket, any arg)
 
 public void OnClientSayCommand_Post(int client, const char[] command, const char[] sArgs)
 {
-	mJson = json_object();
+	if (!Authenticated)
+		return;
+		
+	Handle mJson = json_object();
+	Handle mdJson = json_object();
+	
+	char Client_Name[64], Json_Buffer[1024];
+	
+	GetClientName(client, Client_Name, sizeof Client_Name);
+	
+	json_object_set_new(mJson, "type", json_string("message"));
+	
+	json_object_set_new(mdJson, "origin", json_string(Hostname));
+	json_object_set_new(mdJson, "origin_type", json_string("game"));
+	json_object_set_new(mdJson, "author", json_string(Client_Name));
+	json_object_set_new(mdJson, "message", json_string(sArgs));
+	
+	json_object_set_new(mJson, "data", mdJson);
+	
+	json_dump(mJson, Json_Buffer, sizeof Json_Buffer, 0);
+	
+	SocketSend(Socket, Json_Buffer);
 }
 
 void SocketAuthenticate()
