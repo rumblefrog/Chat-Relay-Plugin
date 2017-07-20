@@ -12,9 +12,11 @@
 
 #define Host "127.0.0.1"
 #define Port 8080
-#define Token "123456"
+#define Token "12345"
 
 Handle Socket;
+
+Handle dJson;
 Handle mJson;
 
 bool Authenticated;
@@ -40,6 +42,12 @@ public void OnPluginStart()
 	SocketConnect(Socket, OnSocketConnected, OnSocketReceive, OnSocketDisconnected, Host, Port);
 }
 
+public void OnPluginEnd()
+{
+	if (Socket != INVALID_HANDLE)
+		SocketDisconnect(Socket);
+}
+
 public int OnSocketError(Handle socket, int errorType, int errorNum, any ary)
 {
 	CloseHandle(socket);
@@ -57,9 +65,9 @@ public int OnSocketReceive(Handle socket, const char[] receiveData, int dataSize
 {
 	PrintToServer("%s", receiveData);
 	
-	mJson = json_load(receiveData);
+	dJson = json_load(receiveData);
 	
-	if (mJson == INVALID_HANDLE)
+	if (dJson == INVALID_HANDLE)
 	{
 		PrintToServer("Failed to parse JSON data");
 		return;
@@ -67,11 +75,13 @@ public int OnSocketReceive(Handle socket, const char[] receiveData, int dataSize
 	
 	Handle hKey;
 	Handle hValue;
-	
-	hKey = json_object_iter(mJson);
-	hValue = json_object_iter_value(hKey);
 		
-	bool Success = (json_typeof(hValue) == JSON_TRUE ? true : false);
+	//Success Object
+	hKey = json_object_iter(dJson);
+	hValue = json_object_iter_value(hKey);
+	
+	//True or false literal
+	bool Success = (json_is_true(hValue) ? true : false);
 	
 	if (!Authenticated)
 	{
@@ -85,12 +95,21 @@ public int OnSocketReceive(Handle socket, const char[] receiveData, int dataSize
 		
 		char sError[128];
 		
-		hKey = json_object_iter(mJson);
+		//Response Object
+		
+		hKey = json_object_iter_next(dJson, hKey);
 		hValue = json_object_iter_value(hKey);
+			
+		Handle hErrObj = json_object_iter(hValue);
+		Handle hErrStr = json_object_iter_value(hErrObj);
+			
+		if (json_typeof(hErrStr) == JSON_STRING)
+		{
+			json_string_value(hErrStr, sError, sizeof sError);
+			PrintToServer("Failed to authenticate: %s", sError);
+		}
 		
-		json_string_value(hValue, sError, sizeof sError);
-		
-		PrintToServer("Failed to authenticate: %s", sError);
+		//Stringify_json_type(json_typeof(hErrStr), keyChar, sizeof keyChar);
 		
 		return;
 	}
@@ -111,12 +130,13 @@ public int OnSocketReceive(Handle socket, const char[] receiveData, int dataSize
 	
 	char Origin[128], Origin_Type[64], Author[64], Message[256];
 	
-	json_string_value(mJson, Origin, sizeof Origin);
-	json_string_value(mJson, Origin_Type, sizeof Origin_Type);
-	json_string_value(mJson, Author, sizeof Author);
-	json_string_value(mJson, Message, sizeof Message);
+	json_object_get_string(dJson, "origin", Origin, sizeof Origin);
+	json_object_get_string(dJson, "origin_type", Origin_Type, sizeof Origin_Type);
+	json_object_get_string(dJson, "author", Author, sizeof Author);
+	json_object_get_string(dJson, "message", Message, sizeof Message);
 	
 	CPrintToChatAll("%s: %s", Author, Message);
+	//PrintToServer("%s : %s : %s : %s", Origin, Origin_Type, Author, Message);
 }
 
 public int OnSocketDisconnected(Handle socket, any arg)
