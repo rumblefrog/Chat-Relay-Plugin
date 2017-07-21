@@ -95,6 +95,8 @@ public int OnSocketConnected(Handle socket, any arg)
 
 public int OnSocketReceive(Handle socket, const char[] receiveData, int dataSize, any arg)
 {
+	PrintToServer("%s", receiveData);
+	
 	Handle dJson = json_load(receiveData);
 	
 	if (dJson == INVALID_HANDLE)
@@ -103,17 +105,14 @@ public int OnSocketReceive(Handle socket, const char[] receiveData, int dataSize
 		return;
 	}
 	
-	Handle hKey;
-	Handle hValue;
-		
-	//Success Object
-	hKey = json_object_iter(dJson);
-	hValue = json_object_iter_value(hKey);
-	
+	char Type[64];
+			
 	//True or false literal
-	bool Success = (json_is_true(hValue) ? true : false);
+	bool Success = json_object_get_bool(dJson, "success");
 	
-	if (!Authenticated)
+	json_object_get_string(dJson, "type", Type, sizeof Type);
+	
+	if (strcmp(Type, "authentication") == 0 && !Authenticated)
 	{
 		if (Success)
 		{
@@ -127,24 +126,17 @@ public int OnSocketReceive(Handle socket, const char[] receiveData, int dataSize
 		
 		//Response Object
 		
-		hKey = json_object_iter_next(dJson, hKey);
-		hValue = json_object_iter_value(hKey);
-			
-		Handle hErrObj = json_object_iter(hValue);
-		Handle hErrStr = json_object_iter_value(hErrObj);
-			
-		if (json_typeof(hErrStr) == JSON_STRING)
-		{
-			json_string_value(hErrStr, sError, sizeof sError);
-			PrintToServer("Failed to authenticate: %s", sError);
-		}
+		Handle hErrObj = json_object_get(dJson, "response");
+		
+		json_object_get_string(hErrObj, "error", sError, sizeof sError);
+		PrintToServer("Failed to authenticate: %s", sError);
 		
 		//Stringify_json_type(json_typeof(hErrStr), keyChar, sizeof keyChar);
 		
 		return;
 	}
 	
-	if (!Binded)
+	if (strcmp(Type, "bindings") == 0 && !Binded)
 	{
 		if (Success)
 		{
@@ -158,16 +150,22 @@ public int OnSocketReceive(Handle socket, const char[] receiveData, int dataSize
 		return;
 	}
 	
-	char Origin[128], Origin_Type[64], Author[64], Author_ID[64], Message[256];
+	if (strcmp(Type, "message") == 0 && Success)
+	{
+		char Origin[128], Origin_Type[64], Author[64], Author_ID[64], Message[256];
 	
-	json_object_get_string(dJson, "origin", Origin, sizeof Origin);
-	json_object_get_string(dJson, "origin_type", Origin_Type, sizeof Origin_Type);
-	json_object_get_string(dJson, "author", Author, sizeof Author);
-	json_object_get_string(dJson, "author_id", Author_ID, sizeof Author_ID);
-	json_object_get_string(dJson, "message", Message, sizeof Message);
+		Handle mObj = json_object_get(dJson, "response");
+		
+		//int MSG_Channel = json_object_get_int(dJson, "channel");
+		json_object_get_string(mObj, "origin", Origin, sizeof Origin);
+		json_object_get_string(mObj, "origin_type", Origin_Type, sizeof Origin_Type);
+		json_object_get_string(mObj, "author", Author, sizeof Author);
+		json_object_get_string(mObj, "author_id", Author_ID, sizeof Author_ID);
+		json_object_get_string(mObj, "message", Message, sizeof Message);
 	
-	CPrintToChatAll("{lightseagreen}[{navy}%s{lightseagreen}] {peru}%s {white}: {orchid}%s", Origin_Type, Author, Message);
-	//PrintToServer("%s : %s : %s : %s", Origin, Origin_Type, Author, Message);
+		CPrintToChatAll("{lightseagreen}[{navy}%s{lightseagreen}] {peru}%s {white}: {orchid}%s", Origin_Type, Author, Message);
+		//PrintToServer("%s : %s : %s : %s", Origin, Origin_Type, Author, Message);
+	}
 }
 
 public int OnSocketDisconnected(Handle socket, any arg)
@@ -192,6 +190,7 @@ public void OnClientSayCommand_Post(int client, const char[] command, const char
 	
 	json_object_set_new(mJson, "type", json_string("message"));
 	
+	json_object_set_new(mdJson, "channel", json_integer(Channel));
 	json_object_set_new(mdJson, "origin", json_string(Hostname));
 	json_object_set_new(mdJson, "origin_type", json_string("game"));
 	json_object_set_new(mdJson, "author", json_string(Client_Name));
@@ -212,7 +211,6 @@ void SocketAuthenticate()
 	char Json_Buffer[512];
 	
 	json_object_set_new(aJson, "type", json_string("authentication"));
-	json_object_set_new(aJson, "channel", json_integer(Channel));
 	
 	json_object_set_new(adJson, "token", json_string(Token));
 	
@@ -242,4 +240,19 @@ void SocketBindings()
 	json_dump(bJson, Json_Buffer, sizeof Json_Buffer, 0);
 		
 	SocketSend(Socket, Json_Buffer);
+}
+
+stock bool Client_IsValid(int iClient, bool bAlive = false)
+{
+	if (iClient >= 1 &&
+	iClient <= MaxClients &&
+	IsClientConnected(iClient) &&
+	IsClientInGame(iClient) &&
+	!IsFakeClient(iClient) &&
+	(bAlive == false || IsPlayerAlive(iClient)))
+	{
+		return true;
+	}
+
+	return false;
 }
