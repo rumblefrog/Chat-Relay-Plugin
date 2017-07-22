@@ -1,7 +1,7 @@
 #pragma semicolon 1
 
 #define PLUGIN_AUTHOR "Fishy"
-#define PLUGIN_VERSION "0.0.1"
+#define PLUGIN_VERSION "0.0.2"
 
 #include <sourcemod>
 #include <socket>
@@ -48,55 +48,82 @@ public void OnPluginStart()
 	
 	GetConVarString(FindConVar("hostname"), Hostname, sizeof Hostname);
 	
-	cHost = CreateConVar("cr_host", "127.0.0.1", "Relay Server Host");
+	CreateConVar("sm_chat_relay_version", PLUGIN_VERSION, "Chat Relay Version", FCVAR_REPLICATED | FCVAR_SPONLY | FCVAR_DONTRECORD | FCVAR_NOTIFY);
+	
+	cHost = CreateConVar("cr_host", "127.0.0.1", "Relay Server Host", FCVAR_NONE);
 	cHost.GetString(Host, sizeof Host);
 	
-	cPort = CreateConVar("cr_port", "8080", "Relay Server Port");
+	cPort = CreateConVar("cr_port", "8080", "Relay Server Port", FCVAR_NONE);
 	Port = cPort.IntValue;
 	
-	cToken = CreateConVar("cr_token", "fishy", "Relay Server Token");
+	cToken = CreateConVar("cr_token", "fishy", "Relay Server Token", FCVAR_PROTECTED);
 	cToken.GetString(Token, sizeof Token);
 	
-	cChannel = CreateConVar("cr_channel", "1", "Channel to send the message on");
+	cChannel = CreateConVar("cr_channel", "1", "Channel to send the message on", FCVAR_NONE);
 	Channel = cChannel.IntValue;
 	
-	cBindings = CreateConVar("cr_bindings", "", "Channel(s) to listen for messages on"); //Empty = All Channels
+	cBindings = CreateConVar("cr_bindings", "", "Channel(s) to listen for messages on", FCVAR_NONE); //Empty = All Channels
 	cBindings.GetString(sBindings, sizeof sBindings);
 	Total_Bindings = ExplodeString(sBindings, ",", pBindings, sizeof pBindings, sizeof pBindings[]);
 	for (int i = 0; i < Total_Bindings; i++)
 		Bindings[i] = StringToInt(pBindings[i]);
 	
-	PrintToServer("%s", pBindings[0]);
-	
 	AutoExecConfig(true, "Chat_Relay");
 	
 	Socket = SocketCreate(SOCKET_TCP, OnSocketError);
-	
-	SocketConnect(Socket, OnSocketConnected, OnSocketReceive, OnSocketDisconnected, Host, Port);
+	SocketSetOption(Socket, SocketReuseAddr, 1);
+	SocketSetOption(Socket, SocketKeepAlive, 1);
+	ConnectRelay();
 }
 
-public void OnPluginEnd()
+void ConnectRelay()
 {
-	if (Socket != INVALID_HANDLE)
-		SocketDisconnect(Socket);
+	if (!SocketIsConnected(Socket))
+		SocketConnect(Socket, OnSocketConnected, OnSocketReceive, OnSocketDisconnected, Host, Port);
+	else
+		PrintToServer("Socket is already connected?");
+}
+
+public Action Timer_Reconnect(Handle timer)
+{
+	ConnectRelay();
+}
+
+void ResetSocketData()
+{
+	Authenticated = false;
+	Binded = false;
+}
+
+void StartReconnectTimer()
+{
+	SocketDisconnect(Socket);
+	CreateTimer(10.0, Timer_Reconnect);
+}
+
+public int OnSocketDisconnected(Handle socket, any arg)
+{	
+	StartReconnectTimer();
+	
+	PrintToServer("Socket disconnected");
 }
 
 public int OnSocketError(Handle socket, int errorType, int errorNum, any ary)
 {
-	CloseHandle(socket);
+	StartReconnectTimer();
 	
-	SetFailState("Socket error %i (errno %i)", errorType, errorNum);
+	LogError("Socket error %i (errno %i)", errorType, errorNum);
 }
 
 public int OnSocketConnected(Handle socket, any arg)
 {
+	PrintToServer("Successfully Connected");
+	ResetSocketData();
 	SocketAuthenticate();
 }
 
 public int OnSocketReceive(Handle socket, const char[] receiveData, int dataSize, any arg)
 {
-	PrintToServer("%s", receiveData);
-	
 	Handle dJson = json_load(receiveData);
 	
 	if (dJson == INVALID_HANDLE)
@@ -168,16 +195,9 @@ public int OnSocketReceive(Handle socket, const char[] receiveData, int dataSize
 	}
 }
 
-public int OnSocketDisconnected(Handle socket, any arg)
-{
-	CloseHandle(socket);
-	
-	PrintToServer("Socket disconnected");
-}
-
 public void OnClientSayCommand_Post(int client, const char[] command, const char[] sArgs)
 {
-	if (!Authenticated)
+	if (!Authenticated || !Client_IsValid(client))
 		return;
 		
 	Handle mJson = json_object();
@@ -206,6 +226,9 @@ public void OnClientSayCommand_Post(int client, const char[] command, const char
 
 void SocketAuthenticate()
 {
+	if (!SocketIsConnected(Socket))
+		return;
+	
 	Handle aJson = json_object();
 	Handle adJson = json_object();
 	char Json_Buffer[512];
@@ -223,6 +246,9 @@ void SocketAuthenticate()
 
 void SocketBindings()
 {
+	if (!SocketIsConnected(Socket))
+		return;
+		
 	Handle bJson = json_object();
 	Handle bdJson = json_object();
 	Handle bdbJson = json_array();
