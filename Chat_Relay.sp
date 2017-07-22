@@ -73,7 +73,12 @@ public void OnPluginStart()
 	Socket = SocketCreate(SOCKET_TCP, OnSocketError);
 	SocketSetOption(Socket, SocketReuseAddr, 1);
 	SocketSetOption(Socket, SocketKeepAlive, 1);
-	ConnectRelay();
+}
+
+public void OnConfigsExecuted()
+{
+	if (!SocketIsConnected(Socket))
+		ConnectRelay();
 }
 
 void ConnectRelay()
@@ -177,8 +182,15 @@ public int OnSocketReceive(Handle socket, const char[] receiveData, int dataSize
 		return;
 	}
 	
-	if (strcmp(Type, "message") == 0 && Success)
+	if (strcmp(Type, "message") == 0)
 	{
+		if (!Success)
+		{
+			ResetSocketData();
+			SocketAuthenticate();
+			return;
+		}
+		
 		char Origin[128], Origin_Type[64], Author[64], Author_ID[64], Message[256];
 	
 		Handle mObj = json_object_get(dJson, "response");
