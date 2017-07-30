@@ -1,7 +1,7 @@
 #pragma semicolon 1
 
 #define PLUGIN_AUTHOR "Fishy"
-#define PLUGIN_VERSION "1.0.0"
+#define PLUGIN_VERSION "1.0.1"
 
 #include <sourcemod>
 #include <socket>
@@ -55,7 +55,7 @@ public void OnPluginStart()
 	
 	cChannel = CreateConVar("cr_channel", "1", "Channel to send the message on", FCVAR_NONE);
 	
-	cBindings = CreateConVar("cr_bindings", "", "Channel(s) to listen for messages on", FCVAR_NONE); //Empty = All Channels
+	cBindings = CreateConVar("cr_bindings", "", "Channel(s) to listen for messages on", FCVAR_NONE); //Empty = None
 	
 	AutoExecConfig(true, "Chat_Relay");
 	
@@ -198,7 +198,7 @@ public int OnSocketReceive(Handle socket, const char[] receiveData, int dataSize
 		
 		Handle mObj = json_object_get(dJson, "response");
 		
-		int MSG_Channel = json_object_get_int(dJson, "channel");
+		int MSG_Channel = json_object_get_int(mObj, "channel");
 		
 		if (!IsListening(MSG_Channel))
 			return;
