@@ -12,8 +12,6 @@
 
 Handle Socket;
 
-bool Authenticated;
-
 bool Verbose;
 
 int Port = 8080;
@@ -112,11 +110,6 @@ public Action Timer_Reconnect(Handle timer)
 	ConnectRelay();
 }
 
-void ResetSocketData()
-{
-	Authenticated = false;
-}
-
 void StartReconnectTimer()
 {
 	SocketDisconnect(Socket);
@@ -140,8 +133,6 @@ public int OnSocketError(Handle socket, int errorType, int errorNum, any ary)
 public int OnSocketConnected(Handle socket, any arg)
 {
 	PrintToServer("Successfully Connected");
-	ResetSocketData();
-	SocketAuthenticate();
 }
 
 public int OnSocketReceive(Handle socket, const char[] receiveData, int dataSize, any arg)
@@ -164,37 +155,9 @@ public int OnSocketReceive(Handle socket, const char[] receiveData, int dataSize
 	
 	json_object_get_string(dJson, "type", Type, sizeof Type);
 	
-	if (strcmp(Type, "authentication") == 0 && !Authenticated)
-	{
-		if (Success)
-		{
-			PrintToServer("Successfully Authenticated");
-			Authenticated = true;
-			return;
-		}
-		
-		char sError[128];
-		
-		//Response Object
-		
-		Handle hErrObj = json_object_get(dJson, "response");
-		
-		json_object_get_string(hErrObj, "error", sError, sizeof sError);
-		PrintToServer("Failed to authenticate: %s", sError);
-		
-		//Stringify_json_type(json_typeof(hErrStr), keyChar, sizeof keyChar);
-		
-		return;
-	}
-	
 	if (strcmp(Type, "message") == 0)
 	{
-		if (!Success)
-		{
-			ResetSocketData();
-			SocketAuthenticate();
-			return;
-		}
+		if (!Success) return;
 		
 		Handle mObj = json_object_get(dJson, "response");
 		
@@ -218,7 +181,7 @@ public int OnSocketReceive(Handle socket, const char[] receiveData, int dataSize
 
 public void OnClientSayCommand_Post(int client, const char[] command, const char[] sArgs)
 {
-	if (!Authenticated || !Client_IsValid(client))
+	if (!Client_IsValid(client))
 		return;
 		
 	Handle mJson = json_object();
@@ -230,6 +193,7 @@ public void OnClientSayCommand_Post(int client, const char[] command, const char
 	GetClientAuthId(client, AuthId_SteamID64, Client_SteamID64, sizeof Client_SteamID64);
 	
 	json_object_set_new(mJson, "type", json_string("message"));
+	json_object_set_new(mJson, "token", json_string(Token));
 	
 	json_object_set_new(mdJson, "channel", json_integer(Channel));
 	json_object_set_new(mdJson, "origin", json_string(Hostname));
@@ -255,29 +219,6 @@ bool IsListening(int channel)
 			return true;
 			
 	return false;
-}
-
-void SocketAuthenticate()
-{
-	if (!SocketIsConnected(Socket))
-		return;
-	
-	Handle aJson = json_object();
-	Handle adJson = json_object();
-	char Json_Buffer[512];
-	
-	json_object_set_new(aJson, "type", json_string("authentication"));
-	
-	json_object_set_new(adJson, "token", json_string(Token));
-	
-	json_object_set_new(aJson, "data", adJson);
-	
-	json_dump(aJson, Json_Buffer, sizeof Json_Buffer, 0);
-	
-	if (Verbose)
-		PrintToServer("%s", Json_Buffer);
-	
-	SocketSend(Socket, Json_Buffer);
 }
 
 stock bool Client_IsValid(int iClient, bool bAlive = false)
