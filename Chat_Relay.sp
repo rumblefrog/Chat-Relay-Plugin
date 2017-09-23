@@ -62,6 +62,7 @@ public void OnPluginStart()
 	Socket = SocketCreate(SOCKET_TCP, OnSocketError);
 	SocketSetOption(Socket, SocketReuseAddr, 1);
 	SocketSetOption(Socket, SocketKeepAlive, 1);
+	SocketSetOption(Socket, ConcatenateCallbacks, 1);
 }
 
 public Action CmdVerbose(int client, int args)
@@ -139,49 +140,59 @@ public int OnSocketReceive(Handle socket, const char[] receiveData, int dataSize
 {
 	if (Verbose)
 		PrintToServer("%s", receiveData);
+		
+	char JSONs[10][512];
 	
-	Handle dJson = json_load(receiveData);
+	int JSON_Count = ExplodeString(receiveData, "\n", JSONs, sizeof JSONs, sizeof JSONs[]);
 	
-	if (dJson == INVALID_HANDLE)
+	for (int i = 0; i < JSON_Count; i++)
 	{
-		PrintToServer("Failed to parse JSON data");
-		return;
-	}
+		Handle dJson = json_load(JSONs[i]);
 	
-	char Type[64];
-			
-	//True or false literal
-	bool Success = json_object_get_bool(dJson, "success");
-	
-	json_object_get_string(dJson, "type", Type, sizeof Type);
-	
-	if (strcmp(Type, "message") == 0)
-	{
-		if (!Success) return;
-		
-		Handle mObj = json_object_get(dJson, "response");
-		
-		int MSG_Channel = json_object_get_int(mObj, "channel");
-		
-		if (!IsListening(MSG_Channel))
+		if (dJson == INVALID_HANDLE)
+		{
+			PrintToServer("Failed to parse JSON data");
 			return;
-		
-		char Origin[128], Origin_Type[64], Author[64], Author_ID[64], Message[256];
-		
-		json_object_get_string(mObj, "origin", Origin, sizeof Origin);
-		json_object_get_string(mObj, "origin_type", Origin_Type, sizeof Origin_Type);
-		json_object_get_string(mObj, "author", Author, sizeof Author);
-		json_object_get_string(mObj, "author_id", Author_ID, sizeof Author_ID);
-		json_object_get_string(mObj, "message", Message, sizeof Message);
+		}
 	
-		CPrintToChatAll("{lightseagreen}[{navy}%s{lightseagreen}] {peru}%s {white}: {orchid}%s", Origin_Type, Author, Message);
-		//PrintToServer("%s : %s : %s : %s", Origin, Origin_Type, Author, Message);
+		char Type[64];
+			
+		//True or false literal
+		bool Success = json_object_get_bool(dJson, "success");
+	
+		json_object_get_string(dJson, "type", Type, sizeof Type);
+	
+		if (strcmp(Type, "message") == 0)
+		{
+			if (!Success) return;
+		
+			Handle mObj = json_object_get(dJson, "response");
+		
+			int MSG_Channel = json_object_get_int(mObj, "channel");
+		
+			if (!IsListening(MSG_Channel))
+				return;
+		
+			char Origin[128], Origin_Type[64], Author[64], Author_ID[64], Message[256];
+		
+			json_object_get_string(mObj, "origin", Origin, sizeof Origin);
+			json_object_get_string(mObj, "origin_type", Origin_Type, sizeof Origin_Type);
+			json_object_get_string(mObj, "author", Author, sizeof Author);
+			json_object_get_string(mObj, "author_id", Author_ID, sizeof Author_ID);
+			json_object_get_string(mObj, "message", Message, sizeof Message);
+	
+			CPrintToChatAll("{lightseagreen}[{navy}%s{lightseagreen}] {peru}%s {white}: {orchid}%s", Origin_Type, Author, Message);
+			//PrintToServer("%s : %s : %s : %s", Origin, Origin_Type, Author, Message);
+		}
 	}
 }
 
 public void OnClientSayCommand_Post(int client, const char[] command, const char[] sArgs)
 {
 	if (!Client_IsValid(client))
+		return;
+		
+	if (!SocketIsConnected(Socket))
 		return;
 		
 	Handle mJson = json_object();
