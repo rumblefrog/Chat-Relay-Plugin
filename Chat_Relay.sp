@@ -143,7 +143,7 @@ public int OnSocketReceive(Handle socket, const char[] receiveData, int dataSize
 		
 	char JSONs[10][512];
 	
-	int JSON_Count = ExplodeString(receiveData, "\n", JSONs, sizeof JSONs, sizeof JSONs[]);
+	int JSON_Count = ExplodeString(receiveData, "\\n", JSONs, sizeof JSONs, sizeof JSONs[]);
 	
 	for (int i = 0; i < JSON_Count; i++)
 	{
